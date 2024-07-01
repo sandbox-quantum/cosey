@@ -86,8 +86,8 @@ enum Kty {
     Okp = 1,
     Ec2 = 2,
     Symmetric = 4,
-    LWE = 5,
-    PQCKEM = 6
+    Lwe = 5,
+    PqcKem = 6
 }
 
 impl Expected for Kty {
@@ -102,8 +102,8 @@ enum Alg {
     Es256 = -7, // ECDSA with SHA-256
     EdDsa = -8,
     Totp = -9, // Unassigned, we use it for TOTP   
-    CRYDI3 = -20, // Dilithium3
-    KYBER768 = -24,
+    CryDi3 = -20, // Dilithium3
+    Kyber768 = -24,
 
     // MAC
     // Hs256 = 5,
@@ -148,6 +148,7 @@ impl Expected for Crv {
 // would need to "sniff" for correct (Kty, Alg, Crv) triple
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
+#[deny(clippy::large_enum_variant)]
 pub enum PublicKey {
     P256Key(P256PublicKey),
     EcdhEsHkdf256Key(EcdhEsHkdf256PublicKey),
@@ -419,14 +420,14 @@ pub struct Kyber768PublicKey {
 }
 
 impl PublicKeyConstants for Dil3PublicKey {
-    const KTY: Kty = Kty::LWE;
-    const ALG: Alg = Alg::CRYDI3;
+    const KTY: Kty = Kty::Lwe;
+    const ALG: Alg = Alg::CryDi3;
     const CRV: Crv = Crv::None;
 }
 
 impl PublicKeyConstants for Kyber768PublicKey {
-    const KTY: Kty = Kty::PQCKEM;
-    const ALG: Alg = Alg::KYBER768;
+    const KTY: Kty = Kty::PqcKem;
+    const ALG: Alg = Alg::Kyber768;
     const CRV: Crv = Crv::None;
 }
 
