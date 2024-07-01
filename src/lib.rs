@@ -148,7 +148,7 @@ impl Expected for Crv {
 // would need to "sniff" for correct (Kty, Alg, Crv) triple
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
-#[deny(clippy::large_enum_variant)]
+#[allow(clippy::large_enum_variant)]
 pub enum PublicKey {
     P256Key(P256PublicKey),
     EcdhEsHkdf256Key(EcdhEsHkdf256PublicKey),
