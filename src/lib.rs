@@ -87,7 +87,7 @@ enum Kty {
     Ec2 = 2,
     Symmetric = 4,
     Lwe = 5,
-    PqcKem = 6
+    PqcKem = 6,
 }
 
 impl Expected for Kty {
@@ -101,7 +101,7 @@ impl Expected for Kty {
 enum Alg {
     Es256 = -7, // ECDSA with SHA-256
     EdDsa = -8,
-    Totp = -9, // Unassigned, we use it for TOTP   
+    Totp = -9,    // Unassigned, we use it for TOTP
     CryDi3 = -20, // Dilithium3
     Kyber768 = -24,
 
@@ -152,7 +152,7 @@ impl Expected for Crv {
 pub enum PublicKey {
     P256Key(P256PublicKey),
     EcdhEsHkdf256Key(EcdhEsHkdf256PublicKey),
-    Ed25519Key(Ed25519PublicKey),    
+    Ed25519Key(Ed25519PublicKey),
     Dil3Key(Dil3PublicKey),
     Kyber768Key(Kyber768PublicKey),
     TotpKey(TotpPublicKey),
@@ -585,11 +585,9 @@ impl<'de> serde::Deserialize<'de> for Dil3PublicKey {
         impl<'de> serde::de::Visitor<'de> for IndexedVisitor {
             type Value = Dil3PublicKey;
 
-
             fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
                 formatter.write_str("Dil3PublicKey")
             }
-
 
             fn visit_map<V>(self, mut map: V) -> Result<Dil3PublicKey, V::Error>
             where
@@ -603,7 +601,6 @@ impl<'de> serde::Deserialize<'de> for Dil3PublicKey {
                     }
                 }
 
-
                 // restricts key usage - check!
                 match (map.next_key()?, map.next_value()?) {
                     (Some(Label::Alg), Some(Dil3PublicKey::ALG)) => {}
@@ -612,14 +609,12 @@ impl<'de> serde::Deserialize<'de> for Dil3PublicKey {
                     }
                 }
 
-
                 let x = match (map.next_key()?, map.next_value()?) {
                     (Some(Label::X), Some(bytes)) => bytes,
                     _ => {
                         return Err(serde::de::Error::missing_field("x"));
                     }
                 };
-
 
                 Ok(Dil3PublicKey { x })
             }
@@ -638,11 +633,9 @@ impl<'de> serde::Deserialize<'de> for Kyber768PublicKey {
         impl<'de> serde::de::Visitor<'de> for IndexedVisitor {
             type Value = Kyber768PublicKey;
 
-
             fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
                 formatter.write_str("Kyber768PublicKey")
             }
-
 
             fn visit_map<V>(self, mut map: V) -> Result<Kyber768PublicKey, V::Error>
             where
@@ -678,7 +671,6 @@ impl<'de> serde::Deserialize<'de> for Kyber768PublicKey {
                         return Err(serde::de::Error::missing_field("x"));
                     }
                 };
-
 
                 Ok(Kyber768PublicKey { x })
             }
