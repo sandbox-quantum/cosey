@@ -47,8 +47,12 @@
 
 use core::fmt::{self, Formatter};
 pub use heapless_bytes::Bytes;
-#[cfg(feature = "backend-dilithium")]
-use pqcrypto_dilithium::ffi;
+#[cfg(feature = "backend-dilithium2")]
+use pqcrypto_dilithium::dilithium2;
+#[cfg(feature = "backend-dilithium3")]
+use pqcrypto_dilithium::dilithium3;
+#[cfg(feature = "backend-dilithium5")]
+use pqcrypto_dilithium::dilithium5;
 use serde::{
     de::{Error as _, Expected, MapAccess, Unexpected},
     Deserialize, Serialize,
@@ -163,11 +167,11 @@ pub enum PublicKey {
     Ed25519Key(Ed25519PublicKey),
     TotpKey(TotpPublicKey),
     #[cfg(feature = "backend-dilithium2")]
-    Dilithium2(Dilithium2PublicKey),
+    Dilithium2Key(Dilithium2PublicKey),
     #[cfg(feature = "backend-dilithium3")]
-    Dilithium3(Dilithium3PublicKey),
+    Dilithium3Key(Dilithium3PublicKey),
     #[cfg(feature = "backend-dilithium5")]
-    Dilithium5(Dilithium5PublicKey),
+    Dilithium5Key(Dilithium5PublicKey),
 }
 
 impl From<P256PublicKey> for PublicKey {
@@ -197,57 +201,70 @@ impl From<TotpPublicKey> for PublicKey {
 #[cfg(feature = "backend-dilithium2")]
 impl From<Dilithium2PublicKey> for PublicKey {
     fn from(key: Dilithium2PublicKey) -> Self {
-        PublicKey::Dilithium2(key)
+        PublicKey::Dilithium2Key(key)
     }
 }
 
 #[cfg(feature = "backend-dilithium3")]
 impl From<Dilithium3PublicKey> for PublicKey {
     fn from(key: Dilithium3PublicKey) -> Self {
-        PublicKey::Dilithium3(key)
+        PublicKey::Dilithium3Key(key)
     }
 }
 #[cfg(feature = "backend-dilithium5")]
 impl From<Dilithium5PublicKey> for PublicKey {
     fn from(key: Dilithium5PublicKey) -> Self {
-        PublicKey::Dilithium5(key)
+        PublicKey::Dilithium5Key(key)
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-enum CrvOrPk {
-    Ec(Crv),
-    #[cfg(feature = "backend-dilithium2")]
-    Dilithium2(Bytes<{ ffi::PQCLEAN_DILITHIUM2_CLEAN_CRYPTO_PUBLICKEYBYTES }>),
-    #[cfg(feature = "backend-dilithium3")]
-    Dilithium3(Bytes<{ ffi::PQCLEAN_DILITHIUM3_CLEAN_CRYPTO_PUBLICKEYBYTES }>),
-    #[cfg(feature = "backend-dilithium5")]
-    Dilithium5(Bytes<{ ffi::PQCLEAN_DILITHIUM5_CLEAN_CRYPTO_PUBLICKEYBYTES }>)
-}
-
 #[derive(Clone, Debug, Default)]
-struct RawPublicKey {
+struct RawEcPublicKey {
     kty: Option<Kty>,
     alg: Option<Alg>,
-    crv_or_pk: Option<CrvOrPk>,
+    crv: Option<Crv>,
     x: Option<Bytes<32>>,
     y: Option<Bytes<32>>,
 }
 
-impl<'de> Deserialize<'de> for RawPublicKey {
+#[derive(Clone, Debug, Default)]
+#[cfg(feature = "backend-dilithium2")]
+struct RawDilithium2PublicKey {
+    kty: Option<Kty>,
+    alg: Option<Alg>,
+    pk: Option<Bytes<{ dilithium2::public_key_bytes() }>>,
+}
+
+#[derive(Clone, Debug, Default)]
+#[cfg(feature = "backend-dilithium3")]
+struct RawDilithium3PublicKey {
+    kty: Option<Kty>,
+    alg: Option<Alg>,
+    pk: Option<Bytes<{ dilithium3::public_key_bytes() }>>,
+}
+
+#[derive(Clone, Debug, Default)]
+#[cfg(feature = "backend-dilithium5")]
+struct RawDilithium5PublicKey {
+    kty: Option<Kty>,
+    alg: Option<Alg>,
+    pk: Option<Bytes<{ dilithium5::public_key_bytes() }>>,
+}
+
+impl<'de> Deserialize<'de> for RawEcPublicKey {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         struct IndexedVisitor;
         impl<'de> serde::de::Visitor<'de> for IndexedVisitor {
-            type Value = RawPublicKey;
+            type Value = RawEcPublicKey;
 
             fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
-                formatter.write_str("RawPublicKey")
+                formatter.write_str("RawEcPublicKey")
             }
 
-            fn visit_map<V>(self, mut map: V) -> Result<RawPublicKey, V::Error>
+            fn visit_map<V>(self, mut map: V) -> Result<RawEcPublicKey, V::Error>
             where
                 V: MapAccess<'de>,
             {
@@ -270,7 +287,7 @@ impl<'de> Deserialize<'de> for RawPublicKey {
                     Ok(key)
                 }
 
-                let mut public_key = RawPublicKey::default();
+                let mut public_key = RawEcPublicKey::default();
 
                 // As we cannot deserialize arbitrary values with cbor-smol, we do not support
                 // unknown keys before a known key.  If there are unknown keys, they must be at the
@@ -291,7 +308,7 @@ impl<'de> Deserialize<'de> for RawPublicKey {
                 }
 
                 if key == Key::Label(Label::CrvOrPk) {
-                    public_key.crv_or_pk = Some(map.next_value()?);
+                    public_key.crv = Some(map.next_value()?);
                     key = next_key(&mut map)?;
                 }
 
@@ -319,7 +336,7 @@ impl<'de> Deserialize<'de> for RawPublicKey {
     }
 }
 
-impl Serialize for RawPublicKey {
+impl Serialize for RawEcPublicKey {
     fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -327,7 +344,7 @@ impl Serialize for RawPublicKey {
         let is_set = [
             self.kty.is_some(),
             self.alg.is_some(),
-            self.crv_or_pk.is_some(),
+            self.crv.is_some(),
             self.x.is_some(),
             self.y.is_some(),
         ];
@@ -343,17 +360,9 @@ impl Serialize for RawPublicKey {
         if let Some(alg) = &self.alg {
             map.serialize_entry(&(Label::Alg as i8), &(*alg as i8))?;
         }
-        // -1: crv or public key
-        if let Some(crv_or_pk) = &self.crv_or_pk {
-            match crv_or_pk {
-                CrvOrPk::Ec(crv) => map.serialize_entry(&(Label::CrvOrPk as i8), &(*crv as i8))?,
-                #[cfg(feature = "backend-dilithium2")]
-                CrvOrPk::Dilithium2(pk) => map.serialize_entry(&(Label::CrvOrPk as i8), pk)?,
-                #[cfg(feature = "backend-dilithium3")]
-                CrvOrPk::Dilithium3(pk) => map.serialize_entry(&(Label::CrvOrPk as i8), pk)?,
-                #[cfg(feature = "backend-dilithium5")]
-                CrvOrPk::Dilithium5(pk) => map.serialize_entry(&(Label::CrvOrPk as i8), pk)?,
-            }
+        // -1: crv
+        if let Some(crv) = &self.crv {
+            map.serialize_entry(&(Label::CrvOrPk as i8), &(*crv as i8))?;
         }
         // -2: x
         if let Some(x) = &self.x {
@@ -368,6 +377,318 @@ impl Serialize for RawPublicKey {
     }
 }
 
+#[cfg(feature = "backend-dilithium2")]
+impl<'de> Deserialize<'de> for RawDilithium2PublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct IndexedVisitor;
+        impl<'de> serde::de::Visitor<'de> for IndexedVisitor {
+            type Value = RawDilithium2PublicKey;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("RawDilithium2PublicKey")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<RawDilithium2PublicKey, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                #[derive(PartialEq)]
+                enum Key {
+                    Label(Label),
+                    Unknown(i8),
+                    None,
+                }
+
+                fn next_key<'a, V: MapAccess<'a>>(map: &mut V) -> Result<Key, V::Error> {
+                    let key: Option<i8> = map.next_key()?;
+                    let key = match key {
+                        Some(key) => match Label::try_from(key) {
+                            Ok(label) => Key::Label(label),
+                            Err(_) => Key::Unknown(key),
+                        },
+                        None => Key::None,
+                    };
+                    Ok(key)
+                }
+
+                let mut public_key = RawDilithium2PublicKey::default();
+
+                // As we cannot deserialize arbitrary values with cbor-smol, we do not support
+                // unknown keys before a known key.  If there are unknown keys, they must be at the
+                // end.
+
+                // only deserialize in canonical order
+
+                let mut key = next_key(&mut map)?;
+
+                if key == Key::Label(Label::Kty) {
+                    public_key.kty = Some(map.next_value()?);
+                    key = next_key(&mut map)?;
+                }
+
+                if key == Key::Label(Label::Alg) {
+                    public_key.alg = Some(map.next_value()?);
+                    key = next_key(&mut map)?;
+                }
+
+                if key == Key::Label(Label::CrvOrPk) {
+                    public_key.pk = Some(map.next_value()?);
+                    key = next_key(&mut map)?;
+                }
+
+                // if there is another key, it should be an unknown one
+                if matches!(key, Key::Label(_)) {
+                    Err(serde::de::Error::custom(
+                        "public key data in wrong order or with duplicates",
+                    ))
+                } else {
+                    Ok(public_key)
+                }
+            }
+        }
+        deserializer.deserialize_map(IndexedVisitor {})
+    }
+}
+
+#[cfg(feature = "backend-dilithium2")]
+impl Serialize for RawDilithium2PublicKey {
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let is_set = [self.kty.is_some(), self.alg.is_some(), self.pk.is_some()];
+        let fields = is_set.into_iter().map(usize::from).sum();
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(fields))?;
+
+        //  1: kty
+        if let Some(kty) = &self.kty {
+            map.serialize_entry(&(Label::Kty as i8), &(*kty as i8))?;
+        }
+        //  3: alg
+        if let Some(alg) = &self.alg {
+            map.serialize_entry(&(Label::Alg as i8), &(*alg as i8))?;
+        }
+        // -1: pk
+        if let Some(pk) = &self.pk {
+            map.serialize_entry(&(Label::CrvOrPk as i8), pk)?;
+        }
+
+        map.end()
+    }
+}
+
+#[cfg(feature = "backend-dilithium3")]
+impl<'de> Deserialize<'de> for RawDilithium3PublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct IndexedVisitor;
+        impl<'de> serde::de::Visitor<'de> for IndexedVisitor {
+            type Value = RawDilithium3PublicKey;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("RawDilithium2PublicKey")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<RawDilithium3PublicKey, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                #[derive(PartialEq)]
+                enum Key {
+                    Label(Label),
+                    Unknown(i8),
+                    None,
+                }
+
+                fn next_key<'a, V: MapAccess<'a>>(map: &mut V) -> Result<Key, V::Error> {
+                    let key: Option<i8> = map.next_key()?;
+                    let key = match key {
+                        Some(key) => match Label::try_from(key) {
+                            Ok(label) => Key::Label(label),
+                            Err(_) => Key::Unknown(key),
+                        },
+                        None => Key::None,
+                    };
+                    Ok(key)
+                }
+
+                let mut public_key = RawDilithium3PublicKey::default();
+
+                // As we cannot deserialize arbitrary values with cbor-smol, we do not support
+                // unknown keys before a known key.  If there are unknown keys, they must be at the
+                // end.
+
+                // only deserialize in canonical order
+
+                let mut key = next_key(&mut map)?;
+
+                if key == Key::Label(Label::Kty) {
+                    public_key.kty = Some(map.next_value()?);
+                    key = next_key(&mut map)?;
+                }
+
+                if key == Key::Label(Label::Alg) {
+                    public_key.alg = Some(map.next_value()?);
+                    key = next_key(&mut map)?;
+                }
+
+                if key == Key::Label(Label::CrvOrPk) {
+                    public_key.pk = Some(map.next_value()?);
+                    key = next_key(&mut map)?;
+                }
+
+                // if there is another key, it should be an unknown one
+                if matches!(key, Key::Label(_)) {
+                    Err(serde::de::Error::custom(
+                        "public key data in wrong order or with duplicates",
+                    ))
+                } else {
+                    Ok(public_key)
+                }
+            }
+        }
+        deserializer.deserialize_map(IndexedVisitor {})
+    }
+}
+
+#[cfg(feature = "backend-dilithium3")]
+impl Serialize for RawDilithium3PublicKey {
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let is_set = [self.kty.is_some(), self.alg.is_some(), self.pk.is_some()];
+        let fields = is_set.into_iter().map(usize::from).sum();
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(fields))?;
+
+        //  1: kty
+        if let Some(kty) = &self.kty {
+            map.serialize_entry(&(Label::Kty as i8), &(*kty as i8))?;
+        }
+        //  3: alg
+        if let Some(alg) = &self.alg {
+            map.serialize_entry(&(Label::Alg as i8), &(*alg as i8))?;
+        }
+        // -1: pk
+        if let Some(pk) = &self.pk {
+            map.serialize_entry(&(Label::CrvOrPk as i8), pk)?;
+        }
+
+        map.end()
+    }
+}
+
+#[cfg(feature = "backend-dilithium5")]
+impl<'de> Deserialize<'de> for RawDilithium5PublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct IndexedVisitor;
+        impl<'de> serde::de::Visitor<'de> for IndexedVisitor {
+            type Value = RawDilithium5PublicKey;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("RawDilithium2PublicKey")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<RawDilithium5PublicKey, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                #[derive(PartialEq)]
+                enum Key {
+                    Label(Label),
+                    Unknown(i8),
+                    None,
+                }
+
+                fn next_key<'a, V: MapAccess<'a>>(map: &mut V) -> Result<Key, V::Error> {
+                    let key: Option<i8> = map.next_key()?;
+                    let key = match key {
+                        Some(key) => match Label::try_from(key) {
+                            Ok(label) => Key::Label(label),
+                            Err(_) => Key::Unknown(key),
+                        },
+                        None => Key::None,
+                    };
+                    Ok(key)
+                }
+
+                let mut public_key = RawDilithium5PublicKey::default();
+
+                // As we cannot deserialize arbitrary values with cbor-smol, we do not support
+                // unknown keys before a known key.  If there are unknown keys, they must be at the
+                // end.
+
+                // only deserialize in canonical order
+
+                let mut key = next_key(&mut map)?;
+
+                if key == Key::Label(Label::Kty) {
+                    public_key.kty = Some(map.next_value()?);
+                    key = next_key(&mut map)?;
+                }
+
+                if key == Key::Label(Label::Alg) {
+                    public_key.alg = Some(map.next_value()?);
+                    key = next_key(&mut map)?;
+                }
+
+                if key == Key::Label(Label::CrvOrPk) {
+                    public_key.pk = Some(map.next_value()?);
+                    key = next_key(&mut map)?;
+                }
+
+                // if there is another key, it should be an unknown one
+                if matches!(key, Key::Label(_)) {
+                    Err(serde::de::Error::custom(
+                        "public key data in wrong order or with duplicates",
+                    ))
+                } else {
+                    Ok(public_key)
+                }
+            }
+        }
+        deserializer.deserialize_map(IndexedVisitor {})
+    }
+}
+
+#[cfg(feature = "backend-dilithium5")]
+impl Serialize for RawDilithium5PublicKey {
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let is_set = [self.kty.is_some(), self.alg.is_some(), self.pk.is_some()];
+        let fields = is_set.into_iter().map(usize::from).sum();
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(fields))?;
+
+        //  1: kty
+        if let Some(kty) = &self.kty {
+            map.serialize_entry(&(Label::Kty as i8), &(*kty as i8))?;
+        }
+        //  3: alg
+        if let Some(alg) = &self.alg {
+            map.serialize_entry(&(Label::Alg as i8), &(*alg as i8))?;
+        }
+        // -1: pk
+        if let Some(pk) = &self.pk {
+            map.serialize_entry(&(Label::CrvOrPk as i8), pk)?;
+        }
+
+        map.end()
+    }
+}
+
 trait PublicKeyConstants {
     const KTY: Kty;
     const ALG: Alg;
@@ -375,7 +696,7 @@ trait PublicKeyConstants {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(into = "RawPublicKey")]
+#[serde(into = "RawEcPublicKey")]
 pub struct P256PublicKey {
     pub x: Bytes<32>,
     pub y: Bytes<32>,
@@ -387,12 +708,12 @@ impl PublicKeyConstants for P256PublicKey {
     const CRV: Crv = Crv::P256;
 }
 
-impl From<P256PublicKey> for RawPublicKey {
+impl From<P256PublicKey> for RawEcPublicKey {
     fn from(key: P256PublicKey) -> Self {
         Self {
             kty: Some(P256PublicKey::KTY),
             alg: Some(P256PublicKey::ALG),
-            crv_or_pk: Some(CrvOrPk::Ec(P256PublicKey::CRV)),
+            crv: Some(P256PublicKey::CRV),
             x: Some(key.x),
             y: Some(key.y),
         }
@@ -400,7 +721,7 @@ impl From<P256PublicKey> for RawPublicKey {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(into = "RawPublicKey")]
+#[serde(into = "RawEcPublicKey")]
 pub struct EcdhEsHkdf256PublicKey {
     pub x: Bytes<32>,
     pub y: Bytes<32>,
@@ -412,12 +733,12 @@ impl PublicKeyConstants for EcdhEsHkdf256PublicKey {
     const CRV: Crv = Crv::P256;
 }
 
-impl From<EcdhEsHkdf256PublicKey> for RawPublicKey {
+impl From<EcdhEsHkdf256PublicKey> for RawEcPublicKey {
     fn from(key: EcdhEsHkdf256PublicKey) -> Self {
         Self {
             kty: Some(EcdhEsHkdf256PublicKey::KTY),
             alg: Some(EcdhEsHkdf256PublicKey::ALG),
-            crv_or_pk: Some(CrvOrPk::Ec(EcdhEsHkdf256PublicKey::CRV)),
+            crv: Some(EcdhEsHkdf256PublicKey::CRV),
             x: Some(key.x),
             y: Some(key.y),
         }
@@ -425,7 +746,7 @@ impl From<EcdhEsHkdf256PublicKey> for RawPublicKey {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(into = "RawPublicKey")]
+#[serde(into = "RawEcPublicKey")]
 pub struct Ed25519PublicKey {
     pub x: Bytes<32>,
 }
@@ -436,12 +757,12 @@ impl PublicKeyConstants for Ed25519PublicKey {
     const CRV: Crv = Crv::Ed25519;
 }
 
-impl From<Ed25519PublicKey> for RawPublicKey {
+impl From<Ed25519PublicKey> for RawEcPublicKey {
     fn from(key: Ed25519PublicKey) -> Self {
         Self {
             kty: Some(Ed25519PublicKey::KTY),
             alg: Some(Ed25519PublicKey::ALG),
-            crv_or_pk: Some(CrvOrPk::Ec(Ed25519PublicKey::CRV)),
+            crv: Some(Ed25519PublicKey::CRV),
             x: Some(key.x),
             y: None,
         }
@@ -450,9 +771,9 @@ impl From<Ed25519PublicKey> for RawPublicKey {
 
 #[cfg(feature = "backend-dilithium2")]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(into = "RawPublicKey")]
+#[serde(into = "RawDilithium2PublicKey")]
 pub struct Dilithium2PublicKey {
-    pub pk: Bytes<{ ffi::PQCLEAN_DILITHIUM2_CLEAN_CRYPTO_PUBLICKEYBYTES }>,
+    pub pk: Bytes<{ dilithium2::public_key_bytes() }>,
 }
 
 #[cfg(feature = "backend-dilithium2")]
@@ -463,23 +784,21 @@ impl PublicKeyConstants for Dilithium2PublicKey {
 }
 
 #[cfg(feature = "backend-dilithium2")]
-impl From<Dilithium2PublicKey> for RawPublicKey {
+impl From<Dilithium2PublicKey> for RawDilithium2PublicKey {
     fn from(key: Dilithium2PublicKey) -> Self {
         Self {
             kty: Some(Dilithium2PublicKey::KTY),
             alg: Some(Dilithium2PublicKey::ALG),
-            crv_or_pk: Some(CrvOrPk::Dilithium2(key.pk)),
-            x: None,
-            y: None,
+            pk: Some(key.pk),
         }
     }
 }
 
 #[cfg(feature = "backend-dilithium3")]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(into = "RawPublicKey")]
+#[serde(into = "RawDilithium3PublicKey")]
 pub struct Dilithium3PublicKey {
-    pub pk: Bytes<{ ffi::PQCLEAN_DILITHIUM3_CLEAN_CRYPTO_PUBLICKEYBYTES }>,
+    pub pk: Bytes<{ dilithium3::public_key_bytes() }>,
 }
 
 #[cfg(feature = "backend-dilithium3")]
@@ -490,23 +809,21 @@ impl PublicKeyConstants for Dilithium3PublicKey {
 }
 
 #[cfg(feature = "backend-dilithium3")]
-impl From<Dilithium3PublicKey> for RawPublicKey {
+impl From<Dilithium3PublicKey> for RawDilithium3PublicKey {
     fn from(key: Dilithium3PublicKey) -> Self {
         Self {
             kty: Some(Dilithium3PublicKey::KTY),
             alg: Some(Dilithium3PublicKey::ALG),
-            crv_or_pk: Some(CrvOrPk::Dilithium3(key.pk)),
-            x: None,
-            y: None,
+            pk: Some(key.pk),
         }
     }
 }
 
 #[cfg(feature = "backend-dilithium5")]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(into = "RawPublicKey")]
+#[serde(into = "RawDilithium5PublicKey")]
 pub struct Dilithium5PublicKey {
-    pub pk: Bytes<{ ffi::PQCLEAN_DILITHIUM5_CLEAN_CRYPTO_PUBLICKEYBYTES }>,
+    pub pk: Bytes<{ dilithium5::public_key_bytes() }>,
 }
 
 #[cfg(feature = "backend-dilithium5")]
@@ -517,20 +834,18 @@ impl PublicKeyConstants for Dilithium5PublicKey {
 }
 
 #[cfg(feature = "backend-dilithium5")]
-impl From<Dilithium5PublicKey> for RawPublicKey {
+impl From<Dilithium5PublicKey> for RawDilithium5PublicKey {
     fn from(key: Dilithium5PublicKey) -> Self {
         Self {
             kty: Some(Dilithium5PublicKey::KTY),
             alg: Some(Dilithium5PublicKey::ALG),
-            crv_or_pk: Some(CrvOrPk::Dilithium5(key.pk)),
-            x: None,
-            y: None,
+            pk: Some(key.pk),
         }
     }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-#[serde(into = "RawPublicKey")]
+#[serde(into = "RawEcPublicKey")]
 pub struct TotpPublicKey {}
 
 impl PublicKeyConstants for TotpPublicKey {
@@ -539,12 +854,12 @@ impl PublicKeyConstants for TotpPublicKey {
     const CRV: Crv = Crv::None;
 }
 
-impl From<TotpPublicKey> for RawPublicKey {
+impl From<TotpPublicKey> for RawEcPublicKey {
     fn from(_key: TotpPublicKey) -> Self {
         Self {
             kty: Some(TotpPublicKey::KTY),
             alg: Some(TotpPublicKey::ALG),
-            crv_or_pk: None,
+            crv: None,
             x: None,
             y: None,
         }
@@ -559,7 +874,7 @@ pub struct X25519PublicKey {
 fn check_key_constants<K: PublicKeyConstants, E: serde::de::Error>(
     kty: Option<Kty>,
     alg: Option<Alg>,
-    crv_or_pk: &Option<CrvOrPk>,
+    crv: Option<Crv>,
 ) -> Result<(), E> {
     let kty = kty.ok_or_else(|| E::missing_field("kty"))?;
     if kty != K::KTY {
@@ -571,19 +886,9 @@ fn check_key_constants<K: PublicKeyConstants, E: serde::de::Error>(
         }
     }
     if K::CRV != Crv::None {
-        let crv_or_pk = crv_or_pk.as_ref().ok_or_else(|| E::missing_field("crv_or_pk"))?;
-        match crv_or_pk {
-            CrvOrPk::Ec(crv) => {
-                if *crv != K::CRV {
-                    return Err(E::invalid_value(Unexpected::Signed(*crv as _), &K::CRV));
-                }
-            },
-            #[cfg(feature = "backend-dilithium2")]
-            CrvOrPk::Dilithium2(pk) => return Err(E::invalid_type(Unexpected::Bytes(&pk as _), &K::CRV)),
-            #[cfg(feature = "backend-dilithium3")]
-            CrvOrPk::Dilithium3(pk) => return Err(E::invalid_type(Unexpected::Bytes(&pk as _), &K::CRV)),
-            #[cfg(feature = "backend-dilithium5")]
-            CrvOrPk::Dilithium5(pk) => return Err(E::invalid_type(Unexpected::Bytes(&pk as _), &K::CRV)),
+        let crv = crv.ok_or_else(|| E::missing_field("crv"))?;
+        if crv != K::CRV {
+            return Err(E::invalid_value(Unexpected::Signed(crv as _), &K::CRV));
         }
     }
     Ok(())
@@ -594,14 +899,14 @@ impl<'de> serde::Deserialize<'de> for P256PublicKey {
     where
         D: serde::Deserializer<'de>,
     {
-        let RawPublicKey {
+        let RawEcPublicKey {
             kty,
             alg,
-            crv_or_pk,
+            crv,
             x,
             y,
-        } = RawPublicKey::deserialize(deserializer)?;
-        check_key_constants::<P256PublicKey, D::Error>(kty, alg, &crv_or_pk)?;
+        } = RawEcPublicKey::deserialize(deserializer)?;
+        check_key_constants::<P256PublicKey, D::Error>(kty, alg, crv)?;
         let x = x.ok_or_else(|| D::Error::missing_field("x"))?;
         let y = y.ok_or_else(|| D::Error::missing_field("y"))?;
         Ok(Self { x, y })
@@ -613,14 +918,14 @@ impl<'de> serde::Deserialize<'de> for EcdhEsHkdf256PublicKey {
     where
         D: serde::Deserializer<'de>,
     {
-        let RawPublicKey {
+        let RawEcPublicKey {
             kty,
             alg,
-            crv_or_pk,
+            crv,
             x,
             y,
-        } = RawPublicKey::deserialize(deserializer)?;
-        check_key_constants::<EcdhEsHkdf256PublicKey, D::Error>(kty, alg, &crv_or_pk)?;
+        } = RawEcPublicKey::deserialize(deserializer)?;
+        check_key_constants::<EcdhEsHkdf256PublicKey, D::Error>(kty, alg, crv)?;
         let x = x.ok_or_else(|| D::Error::missing_field("x"))?;
         let y = y.ok_or_else(|| D::Error::missing_field("y"))?;
         Ok(Self { x, y })
@@ -632,10 +937,10 @@ impl<'de> serde::Deserialize<'de> for Ed25519PublicKey {
     where
         D: serde::Deserializer<'de>,
     {
-        let RawPublicKey {
-            kty, alg, crv_or_pk, x, ..
-        } = RawPublicKey::deserialize(deserializer)?;
-        check_key_constants::<Ed25519PublicKey, D::Error>(kty, alg, &crv_or_pk)?;
+        let RawEcPublicKey {
+            kty, alg, crv, x, ..
+        } = RawEcPublicKey::deserialize(deserializer)?;
+        check_key_constants::<Ed25519PublicKey, D::Error>(kty, alg, crv)?;
         let x = x.ok_or_else(|| D::Error::missing_field("x"))?;
         Ok(Self { x })
     }
@@ -647,19 +952,11 @@ impl<'de> serde::Deserialize<'de> for Dilithium2PublicKey {
     where
         D: serde::Deserializer<'de>,
     {
-        let RawPublicKey {
-            kty, alg, crv_or_pk, ..
-        } = RawPublicKey::deserialize(deserializer)?;
-        check_key_constants::<Dilithium2PublicKey, D::Error>(kty, alg, &crv_or_pk)?;
-        let pk = crv_or_pk.ok_or_else(|| D::Error::missing_field("pk"))?;
-        match pk {
-            CrvOrPk::Dilithium2(pk) => Ok(Self { pk }),
-            #[cfg(feature = "backend-dilithium3")]
-            CrvOrPk::Dilithium3(pk) => Err(D::Error::invalid_length(pk.len(), &"expected 1312")),
-            #[cfg(feature = "backend-dilithium5")]
-            CrvOrPk::Dilithium5(pk) => Err(D::Error::invalid_length(pk.len(), &"expected 1312")),
-            CrvOrPk::Ec(crv) => return Err(D::Error::invalid_type(Unexpected::Signed(crv as _), &"expected Bytes")),
-        }
+        let RawDilithium2PublicKey { kty, alg, pk, .. } =
+            RawDilithium2PublicKey::deserialize(deserializer)?;
+        check_key_constants::<Dilithium2PublicKey, D::Error>(kty, alg, Some(Crv::None))?;
+        let pk = pk.ok_or_else(|| D::Error::missing_field("pk"))?;
+        Ok(Self { pk })
     }
 }
 
@@ -669,19 +966,11 @@ impl<'de> serde::Deserialize<'de> for Dilithium3PublicKey {
     where
         D: serde::Deserializer<'de>,
     {
-        let RawPublicKey {
-            kty, alg, crv_or_pk, ..
-        } = RawPublicKey::deserialize(deserializer)?;
-        check_key_constants::<Dilithium3PublicKey, D::Error>(kty, alg, &crv_or_pk)?;
-        let pk = crv_or_pk.ok_or_else(|| D::Error::missing_field("pk"))?;
-        match pk {
-            CrvOrPk::Dilithium3(pk) => Ok(Self { pk }),
-            #[cfg(feature = "backend-dilithium2")]
-            CrvOrPk::Dilithium2(pk) => Err(D::Error::invalid_length(pk.len(), &"expected 1952")),
-            #[cfg(feature = "backend-dilithium5")]
-            CrvOrPk::Dilithium5(pk) => Err(D::Error::invalid_length(pk.len(), &"expected 1952")),
-            CrvOrPk::Ec(crv) => return Err(D::Error::invalid_type(Unexpected::Signed(crv as _), &"expected Bytes")),
-        }
+        let RawDilithium3PublicKey { kty, alg, pk, .. } =
+            RawDilithium3PublicKey::deserialize(deserializer)?;
+        check_key_constants::<Dilithium3PublicKey, D::Error>(kty, alg, Some(Crv::None))?;
+        let pk = pk.ok_or_else(|| D::Error::missing_field("pk"))?;
+        Ok(Self { pk })
     }
 }
 
@@ -691,18 +980,10 @@ impl<'de> serde::Deserialize<'de> for Dilithium5PublicKey {
     where
         D: serde::Deserializer<'de>,
     {
-        let RawPublicKey {
-            kty, alg, crv_or_pk, ..
-        } = RawPublicKey::deserialize(deserializer)?;
-        check_key_constants::<Dilithium5PublicKey, D::Error>(kty, alg, &crv_or_pk)?;
-        let pk = crv_or_pk.ok_or_else(|| D::Error::missing_field("pk"))?;
-        match pk {
-            CrvOrPk::Dilithium5(pk) => Ok(Self { pk }),
-            #[cfg(feature = "backend-dilithium2")]
-            CrvOrPk::Dilithium2(pk) => Err(D::Error::invalid_length(pk.len(), &"expected 2592")),
-            #[cfg(feature = "backend-dilithium3")]
-            CrvOrPk::Dilithium3(pk) => Err(D::Error::invalid_length(pk.len(), &"expected 2592")),
-            CrvOrPk::Ec(crv) => return Err(D::Error::invalid_type(Unexpected::Signed(crv as _), &"expected Bytes")),
-        }
+        let RawDilithium5PublicKey { kty, alg, pk, .. } =
+            RawDilithium5PublicKey::deserialize(deserializer)?;
+        check_key_constants::<Dilithium5PublicKey, D::Error>(kty, alg, Some(Crv::None))?;
+        let pk = pk.ok_or_else(|| D::Error::missing_field("pk"))?;
+        Ok(Self { pk })
     }
 }
