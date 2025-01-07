@@ -29,6 +29,19 @@ jobs:
     - name: Run tests
       run: cargo test
 
+  pqc:
+    name: Run PQC tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+    - name: Run tests
+      run: cargo test --features backend-dilithium2,backend-dilithium3,backend-dilithium5
+
   clippy:
     name: Run clippy
     runs-on: ubuntu-latest
