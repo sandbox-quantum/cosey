@@ -167,11 +167,11 @@ pub enum PublicKey {
     Ed25519Key(Ed25519PublicKey),
     TotpKey(TotpPublicKey),
     #[cfg(feature = "backend-dilithium2")]
-    Dilithium2Key(Dilithium2PublicKey),
+    Dilithium2(Dilithium2PublicKey),
     #[cfg(feature = "backend-dilithium3")]
-    Dilithium3Key(Dilithium3PublicKey),
+    Dilithium3(Dilithium3PublicKey),
     #[cfg(feature = "backend-dilithium5")]
-    Dilithium5Key(Dilithium5PublicKey),
+    Dilithium5(Dilithium5PublicKey),
 }
 
 impl From<P256PublicKey> for PublicKey {
@@ -201,20 +201,20 @@ impl From<TotpPublicKey> for PublicKey {
 #[cfg(feature = "backend-dilithium2")]
 impl From<Dilithium2PublicKey> for PublicKey {
     fn from(key: Dilithium2PublicKey) -> Self {
-        PublicKey::Dilithium2Key(key)
+        PublicKey::Dilithium2(key)
     }
 }
 
 #[cfg(feature = "backend-dilithium3")]
 impl From<Dilithium3PublicKey> for PublicKey {
     fn from(key: Dilithium3PublicKey) -> Self {
-        PublicKey::Dilithium3Key(key)
+        PublicKey::Dilithium3(key)
     }
 }
 #[cfg(feature = "backend-dilithium5")]
 impl From<Dilithium5PublicKey> for PublicKey {
     fn from(key: Dilithium5PublicKey) -> Self {
-        PublicKey::Dilithium5Key(key)
+        PublicKey::Dilithium5(key)
     }
 }
 
